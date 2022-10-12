@@ -17,8 +17,8 @@ The distribution which can be downloaded from [Releases](https://github.com/krlv
 * **UNINSTALL.cmd** - install DLL for reducing address bar height and restore modern search experience
 * **DisableModernSearch-CurrentUser.cmd** - disable modern search experience for current user
 * **RestoreModernSearch-CurrentUser.cmd** - restore modern search experience for current user
-* **DisableModernSearch-AllUsers.cmd** - disable modern search experience for current user
-* **RestoreModernSearch-AllUsers.cmd** - restore modern search experience for current user
+* **DisableModernSearch-AllUsers.cmd** - disable modern search experience for all users
+* **RestoreModernSearch-AllUsers.cmd** - restore modern search experience for all users
 
 It is also possible to have modern search enabled with tiny address bar - just execute `RestoreModernSearch-AllUsers.cmd` after installation.
 
