@@ -1,13 +1,18 @@
 #include "pch.h"
 #include <DbgHelp.h>
+
 #pragma comment(lib, "Dbghelp.lib")
 
 /////////////////////////////////////////////////////
 #pragma region IAT Hook Injector
-// https://github.com/valinet/libvalinet/blob/15ad6ceb685c54de7ebb77f115eabbf88caebf33/valinet/hooking/iatpatch.h
+// https://github.com/valinet/libvalinet/blob/f0b704fb585aff54692fda6a7d1edcef3fa3e27b/valinet/hooking/iatpatch.h
 // https://blog.neteril.org/blog/2016/12/23/diverting-functions-windows-iat-patching/
-inline BOOL PatchIAT(HMODULE module, const char* libName, const char* funcName, PROC hookAddr)
+inline BOOL PatchIAT(HMODULE hMod, PSTR libName, PSTR funcName, uintptr_t hookAddr)
 {
+    // Increment module reference count to prevent other threads from unloading it while we're working with it
+    HMODULE module;
+    if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, hMod, &module)) return FALSE;
+
     // Get a reference to the import table to locate the kernel32 entry
     ULONG size;
     PIMAGE_IMPORT_DESCRIPTOR importDescriptor = (PIMAGE_IMPORT_DESCRIPTOR)ImageDirectoryEntryToDataEx(module, TRUE, IMAGE_DIRECTORY_ENTRY_IMPORT, &size, NULL);
@@ -22,8 +27,10 @@ inline BOOL PatchIAT(HMODULE module, const char* libName, const char* funcName, 
         }
         importDescriptor++;
     }
-    if (!found)
+    if (!found) {
+        FreeLibrary(module);
         return FALSE;
+    }
 
     // From the kernel32 import descriptor, go over its IAT thunks to
     // find the one used by the rest of the code to call GetProcAddress
@@ -50,17 +57,20 @@ inline BOOL PatchIAT(HMODULE module, const char* libName, const char* funcName, 
             VirtualQuery(funcStorage, &mbi, sizeof(MEMORY_BASIC_INFORMATION));
 
             // Try to change the page to be writable if it's not already
-            if (!VirtualProtect(mbi.BaseAddress, mbi.RegionSize, PAGE_READWRITE, &mbi.Protect))
+            if (!VirtualProtect(mbi.BaseAddress, mbi.RegionSize, PAGE_READWRITE, &mbi.Protect)) {
+                FreeLibrary(module);
                 return FALSE;
+            }
 
             // Store our hook
-            *funcStorage = hookAddr;
+            *funcStorage = (PROC)hookAddr;
 
             // Restore the old flag on the page
             DWORD dwOldProtect;
             VirtualProtect(mbi.BaseAddress, mbi.RegionSize, mbi.Protect, &dwOldProtect);
 
             // Profit
+            FreeLibrary(module);
             return TRUE;
         }
 
@@ -68,8 +78,10 @@ inline BOOL PatchIAT(HMODULE module, const char* libName, const char* funcName, 
         oldthunk++;
     }
 
+    FreeLibrary(module);
     return FALSE;
 }
+
 #pragma endregion
 /////////////////////////////////////////////////////
 
@@ -87,7 +99,7 @@ int WINAPI Patch_GetSystemMetricsForDpi(
 #else
 #pragma comment(linker, "/export:DllGetClassObject=_DllGetClassObject@12")
 #endif
-extern "C" HRESULT WINAPI DllGetClassObject(
+HRESULT WINAPI DllGetClassObject(
     REFCLSID rclsid,
     REFIID   riid,
     LPVOID* ppv
@@ -98,11 +110,11 @@ extern "C" HRESULT WINAPI DllGetClassObject(
     {
         return E_HANDLE;
     }
-    if (!PatchIAT(hExplorerFrame, "user32.dll", "GetSystemMetricsForDpi", (PROC)Patch_GetSystemMetricsForDpi))
+    if (!PatchIAT(hExplorerFrame, "user32.dll", "GetSystemMetricsForDpi", Patch_GetSystemMetricsForDpi))
     {
         return E_FAIL;
     }
-    //FreeLibrary(hExplorerFrame);
+    FreeLibrary(hExplorerFrame);
     return S_OK;
 }
 
